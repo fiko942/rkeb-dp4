@@ -377,6 +377,88 @@ describe("enrichment-service", () => {
     expect(response.meta?.browserVisitedCount).toBe(0);
   });
 
+  it("does not cache warning-only empty enrichment results", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "almatrace-enrich-"));
+    const cacheFilePath = path.join(tempDir, "cache.json");
+    const failingProvider = new FakeSearchProvider("playwright-search", {
+      items: [],
+      warnings: ["Pencarian browser untuk LinkedIn gagal: net::ERR_CONNECTION_RESET"],
+      meta: {
+        name: "playwright-search",
+        source: "error"
+      }
+    });
+    const succeedingProvider = new FakeSearchProvider("playwright-search", {
+      items: [
+        {
+          link: "https://www.linkedin.com/in/alyarahman",
+          title: "Alya Rahman - LinkedIn",
+          snippet: "Teknik Informatika at Institut Teknologi Bandung",
+          source: "playwright-search:linkedin",
+          platformHint: "linkedin"
+        }
+      ],
+      warnings: [],
+      meta: {
+        name: "playwright-search",
+        source: "live"
+      }
+    });
+    const pageResolver = new FakePageResolver("playwright-local", true, {
+      "https://www.linkedin.com/in/alyarahman": {
+        title: "Alya Rahman - LinkedIn",
+        description: "Teknik Informatika at Institut Teknologi Bandung",
+        jsonLdText: "",
+        visibleText: "Alya Rahman LinkedIn Institut Teknologi Bandung",
+        emails: [],
+        addresses: [],
+        directProfileLinks: [],
+        crawlableLinks: [],
+        probableName: "Alya Rahman"
+      }
+    });
+
+    const firstResponse = await enrichPerson(
+      {
+        ...payload,
+        cacheKey: "student-1:warning-empty"
+      },
+      {
+        cacheFilePath,
+        searchProviders: [failingProvider],
+        pageResolver
+      }
+    );
+
+    expect(firstResponse.source).toBe("live");
+    expect(firstResponse.warnings).toEqual([
+      "Pencarian browser untuk LinkedIn gagal: net::ERR_CONNECTION_RESET"
+    ]);
+    expect(firstResponse.profiles).toEqual([]);
+
+    const secondResponse = await enrichPerson(
+      {
+        ...payload,
+        cacheKey: "student-1:warning-empty"
+      },
+      {
+        cacheFilePath,
+        searchProviders: [succeedingProvider],
+        pageResolver
+      }
+    );
+
+    expect(succeedingProvider.searchCandidates).toHaveBeenCalledTimes(1);
+    expect(secondResponse.source).toBe("live");
+    expect(secondResponse.profiles).toEqual([
+      expect.objectContaining({
+        platform: "linkedin",
+        username: "alyarahman",
+        url: "https://www.linkedin.com/in/alyarahman"
+      })
+    ]);
+  });
+
   it("filters residential addresses and reuses accepted enrichment cache", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "almatrace-enrich-"));
     const cacheFilePath = path.join(tempDir, "cache.json");

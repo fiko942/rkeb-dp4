@@ -46,6 +46,17 @@ class LocalBrowserWorker {
     await mkdir(profileDir, { recursive: true });
     this.profileDir = profileDir;
 
+    if (process.env.NODE_ENV !== "test") {
+      console.info("[AlmaTrace] Local Playwright launching", {
+        workerId: this.id,
+        platform: process.platform,
+        headless: this.options.headless,
+        channel: this.options.channel,
+        executablePath: this.options.executablePath,
+        profileDir
+      });
+    }
+
     const { chromium } = await import("playwright");
     const launchOptions = {
       headless: this.options.headless,
@@ -65,7 +76,14 @@ class LocalBrowserWorker {
     } as const;
 
     try {
-      return await chromium.launchPersistentContext(profileDir, launchOptions);
+      const context = await chromium.launchPersistentContext(profileDir, launchOptions);
+      if (process.env.NODE_ENV !== "test") {
+        console.info("[AlmaTrace] Local Playwright ready", {
+          workerId: this.id,
+          profileDir
+        });
+      }
+      return context;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("[AlmaTrace] Local Playwright launch failed", {
@@ -122,6 +140,12 @@ class LocalBrowserWorker {
     }
 
     if (this.profileDir) {
+      if (process.env.NODE_ENV !== "test") {
+        console.info("[AlmaTrace] Local Playwright worker disposed", {
+          workerId: this.id,
+          profileDir: this.profileDir
+        });
+      }
       await rm(this.profileDir, { recursive: true, force: true }).catch(
         () => undefined
       );

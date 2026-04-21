@@ -18,7 +18,7 @@ import { buildCacheKey, dedupe, normalizeText, normalizeWhitespace } from "@/lib
 const ENRICHMENT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DISCOVERY_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const PROVIDER_COOLDOWN_TTL_MS = 30 * 60 * 1000;
-const PLAYWRIGHT_DISCOVERY_VERSION = "playwright-search-v3";
+const PLAYWRIGHT_DISCOVERY_VERSION = "playwright-search-v4";
 const BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 const GOOGLE_CSE_SEARCH_ENDPOINT = "https://www.googleapis.com/customsearch/v1";
 const PLAYWRIGHT_SEARCH_ENDPOINT = "https://duckduckgo.com/html/";
@@ -114,6 +114,10 @@ function getFetchImpl(fetchImpl?: typeof fetch) {
   return fetchImpl ?? fetch;
 }
 
+function shouldEmitRuntimeLogs() {
+  return process.env.NODE_ENV !== "test";
+}
+
 class ProviderRuntimeError extends Error {
   readonly code: "cooldown" | "failure";
 
@@ -145,10 +149,30 @@ function logEnrichmentError(
   context: Record<string, unknown>,
   error: unknown
 ) {
+  if (!shouldEmitRuntimeLogs()) {
+    return;
+  }
+
   console.error(`[AlmaTrace] ${scope}`, {
     ...context,
     error: getErrorDetail(error)
   });
+}
+
+function logEnrichmentInfo(scope: string, context: Record<string, unknown>) {
+  if (!shouldEmitRuntimeLogs()) {
+    return;
+  }
+
+  console.info(`[AlmaTrace] ${scope}`, context);
+}
+
+function logEnrichmentWarn(scope: string, context: Record<string, unknown>) {
+  if (!shouldEmitRuntimeLogs()) {
+    return;
+  }
+
+  console.warn(`[AlmaTrace] ${scope}`, context);
 }
 
 function platformLabel(platform: CandidatePlatform) {
@@ -1525,7 +1549,7 @@ export class PlaywrightSearchProvider implements SearchProvider {
 
   private buildCacheKey(payload: EnrichmentRequestPayload) {
     return buildCacheKey([
-      "discovery",
+      PLAYWRIGHT_DISCOVERY_VERSION,
       this.name,
       payload.personId,
       payload.fullName,
@@ -1571,6 +1595,8 @@ export class PlaywrightSearchProvider implements SearchProvider {
           }
 
           const html = await page.content();
+          const pageTitle = normalizeWhitespace(await page.title().catch(() => ""));
+          const currentUrl = page.url();
           const bodyText = await page
             .textContent("body")
             .then((value) => value ?? "")
@@ -1579,18 +1605,43 @@ export class PlaywrightSearchProvider implements SearchProvider {
           if (
             text.includes("captcha") ||
             text.includes("unusual traffic") ||
-            text.includes("detected automated traffic")
+            text.includes("detected automated traffic") ||
+            text.includes("verify you are human") ||
+            text.includes("unfortunately bots use duckduckgo too") ||
+            text.includes("anomaly")
           ) {
             const message = `Pencarian browser untuk ${platformLabel(platform)} terkena challenge atau rate limit dari mesin pencari.`;
-            console.warn("[AlmaTrace] Playwright search cooldown", {
+            logEnrichmentWarn("Playwright search cooldown", {
               platform,
               query,
+              pageTitle,
+              currentUrl,
               message
             });
             throw new ProviderRuntimeError("cooldown", message);
           }
 
-          return extractDuckDuckGoSearchItems(html, platform).slice(0, this.resultLimit);
+          const items = extractDuckDuckGoSearchItems(html, platform).slice(0, this.resultLimit);
+
+          if (items.length === 0) {
+            logEnrichmentWarn("Playwright search returned no parsable candidates", {
+              platform,
+              query,
+              pageTitle,
+              currentUrl,
+              excerpt: normalizeWhitespace(bodyText).slice(0, 220)
+            });
+          } else {
+            logEnrichmentInfo("Playwright search query completed", {
+              platform,
+              query,
+              pageTitle,
+              currentUrl,
+              candidateCount: items.length
+            });
+          }
+
+          return items;
         } catch (error) {
           if (error instanceof ProviderRuntimeError) {
             throw error;
@@ -1621,6 +1672,12 @@ export class PlaywrightSearchProvider implements SearchProvider {
     );
 
     if (cached.hit && cached.entry) {
+      logEnrichmentInfo("Playwright discovery cache hit", {
+        personId: payload.personId,
+        fullName: payload.fullName,
+        cacheKey,
+        candidateCount: cached.entry.value.items.length
+      });
       return {
         items: cached.entry.value.items,
         warnings: [],
@@ -1633,6 +1690,11 @@ export class PlaywrightSearchProvider implements SearchProvider {
       `${this.name}:${PLAYWRIGHT_DISCOVERY_VERSION}`
     );
     if (cooldown.hit && cooldown.entry) {
+      logEnrichmentWarn("Playwright discovery cooldown hit", {
+        personId: payload.personId,
+        fullName: payload.fullName,
+        reason: cooldown.entry.value.reason
+      });
       return {
         items: [],
         warnings: [cooldown.entry.value.reason],
@@ -1641,6 +1703,13 @@ export class PlaywrightSearchProvider implements SearchProvider {
     }
 
     const queryConfigs = buildDiscoveryQueries(payload);
+    logEnrichmentInfo("Playwright discovery started", {
+      personId: payload.personId,
+      fullName: payload.fullName,
+      headless: getRuntimeEnv().localBrowserHeadless,
+      queryCount: queryConfigs.length,
+      platforms: queryConfigs.map((entry) => entry.platform)
+    });
     const settledResults = await Promise.allSettled(
       queryConfigs.map(({ query, platform }) => this.fetchQuery(query, platform))
     );
@@ -1680,18 +1749,34 @@ export class PlaywrightSearchProvider implements SearchProvider {
       settledResults.flatMap((result) => (result.status === "fulfilled" ? result.value : []))
     );
 
-    await setServerCache<DiscoveryCachePayload>(
-      "discovery",
-      cacheKey,
-      {
-        provider: this.name,
-        items,
-        fetchedAt: new Date().toISOString()
-      },
-      DISCOVERY_CACHE_TTL_MS,
-      payload.cacheKey,
-      this.cacheFilePath
-    );
+    logEnrichmentInfo("Playwright discovery finished", {
+      personId: payload.personId,
+      fullName: payload.fullName,
+      candidateCount: items.length,
+      warningCount: warnings.length
+    });
+
+    if (items.length > 0 || warnings.length === 0) {
+      await setServerCache<DiscoveryCachePayload>(
+        "discovery",
+        cacheKey,
+        {
+          provider: this.name,
+          items,
+          fetchedAt: new Date().toISOString()
+        },
+        DISCOVERY_CACHE_TTL_MS,
+        payload.cacheKey,
+        this.cacheFilePath
+      );
+    } else {
+      logEnrichmentWarn("Playwright discovery cache skipped", {
+        personId: payload.personId,
+        fullName: payload.fullName,
+        reason: "warnings-without-results",
+        warnings
+      });
+    }
 
     return {
       items,
@@ -1768,7 +1853,7 @@ export class LocalPlaywrightResolver implements PageResolver {
 
 function buildEnrichmentCacheKey(payload: EnrichmentRequestPayload) {
   return buildCacheKey([
-    "enrichment-v3",
+    "enrichment-v4",
     payload.cacheKey || "enrichment",
     payload.personId,
     payload.fullName,
@@ -1923,6 +2008,11 @@ export async function enrichPerson(
   );
 
   if (cacheResult.hit && cacheResult.entry) {
+    logEnrichmentInfo("Enrichment cache hit", {
+      personId: payload.personId,
+      fullName: payload.fullName,
+      cacheKey
+    });
     return {
       ...cacheResult.entry.value,
       source: "cache"
@@ -1944,6 +2034,11 @@ export async function enrichPerson(
     new PlaywrightSearchProvider({ cacheFilePath: options.cacheFilePath })
   ];
   const searchProviders = options.searchProviders ?? configuredProviders;
+  logEnrichmentInfo("Enrichment started", {
+    personId: payload.personId,
+    fullName: payload.fullName,
+    providerCount: searchProviders.length
+  });
   const providerResults = await Promise.all(
     searchProviders.map((provider) => provider.searchCandidates(payload))
   );
@@ -1985,6 +2080,13 @@ export async function enrichPerson(
     ...githubResult.followupItems,
     ...providerItems.filter(shouldOpenWithBrowser)
   ]).sort((left, right) => getBrowserPriority(left) - getBrowserPriority(right));
+  logEnrichmentInfo("Enrichment discovery summary", {
+    personId: payload.personId,
+    fullName: payload.fullName,
+    candidateCount: providerItems.length,
+    followupQueueCount: followupQueue.length,
+    warnings: providerWarnings
+  });
 
   let browserFollowupMs = 0;
   let browserVisitedCount = 0;
@@ -1995,6 +2097,11 @@ export async function enrichPerson(
 
   if (followupQueue.length > 0 && resolver.isAvailable()) {
     const startedAt = Date.now();
+    logEnrichmentInfo("Playwright follow-up started", {
+      personId: payload.personId,
+      fullName: payload.fullName,
+      queuedUrls: followupQueue.length
+    });
     try {
       while (followupQueue.length > 0 && browserVisitedUrls.size < browserFollowupLimit) {
         const item = followupQueue.shift();
@@ -2003,6 +2110,13 @@ export async function enrichPerson(
         }
 
         browserVisitedUrls.add(item.link);
+        logEnrichmentInfo("Playwright follow-up opening page", {
+          personId: payload.personId,
+          fullName: payload.fullName,
+          url: item.link,
+          source: item.source,
+          depth: item.depth ?? 0
+        });
         trace.push(
           createTraceItem(
             "browser",
@@ -2017,6 +2131,12 @@ export async function enrichPerson(
 
         const metadata = await resolver.resolve(item.link);
         if (!metadata) {
+          logEnrichmentWarn("Playwright follow-up could not extract page", {
+            personId: payload.personId,
+            fullName: payload.fullName,
+            url: item.link,
+            source: item.source
+          });
           trace.push(
             createTraceItem(
               "browser",
@@ -2030,6 +2150,16 @@ export async function enrichPerson(
         }
 
         websiteCandidates.push(...buildCandidatesFromFollowupItem(item, metadata));
+        logEnrichmentInfo("Playwright follow-up extracted page", {
+          personId: payload.personId,
+          fullName: payload.fullName,
+          url: item.link,
+          source: item.source,
+          emailCount: metadata.emails.length,
+          addressCount: metadata.addresses.length,
+          directProfileLinkCount: metadata.directProfileLinks.length,
+          crawlableLinkCount: metadata.crawlableLinks.length
+        });
         trace.push(
           createTraceItem(
             "browser",
@@ -2069,6 +2199,12 @@ export async function enrichPerson(
     } finally {
       browserFollowupMs = Date.now() - startedAt;
       browserVisitedCount = browserVisitedUrls.size;
+      logEnrichmentInfo("Playwright follow-up finished", {
+        personId: payload.personId,
+        fullName: payload.fullName,
+        browserVisitedCount,
+        browserFollowupMs
+      });
       await resolver.close();
     }
   } else if (followupQueue.length > 0) {
@@ -2084,6 +2220,12 @@ export async function enrichPerson(
         )
       )
     );
+  } else {
+    logEnrichmentWarn("Playwright follow-up skipped because queue is empty", {
+      personId: payload.personId,
+      fullName: payload.fullName,
+      candidateCount: providerItems.length
+    });
   }
 
   const decisions = dedupeCandidates([...directCandidates, ...websiteCandidates]).map(
@@ -2119,14 +2261,36 @@ export async function enrichPerson(
     trace: dedupeTrace(trace)
   };
 
-  await setServerCache(
-    "enrichment",
-    cacheKey,
-    response,
-    ENRICHMENT_CACHE_TTL_MS,
-    payload.cacheKey,
-    options.cacheFilePath
-  );
+  logEnrichmentInfo("Enrichment completed", {
+    personId: payload.personId,
+    fullName: payload.fullName,
+    profileCount: response.profiles.length,
+    hasEmail: Boolean(response.email),
+    hasAddress: Boolean(response.address),
+    warningCount: response.warnings.length
+  });
+
+  if (
+    response.profiles.length > 0 ||
+    response.email ||
+    response.address ||
+    response.warnings.length === 0
+  ) {
+    await setServerCache(
+      "enrichment",
+      cacheKey,
+      response,
+      ENRICHMENT_CACHE_TTL_MS,
+      payload.cacheKey,
+      options.cacheFilePath
+    );
+  } else {
+    logEnrichmentWarn("Enrichment cache skipped", {
+      personId: payload.personId,
+      fullName: payload.fullName,
+      warnings: response.warnings
+    });
+  }
 
   return response;
 }
