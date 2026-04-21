@@ -8,6 +8,7 @@
     "prebuild": "npm run clean",
     "build": "next build",
     "package:server": "npm run build && node scripts/package-server.mjs",
+    "zip:update": "npm run package:server",
     "start": "next start -p 59620",
     "lint": "next lint",
     "test": "vitest run",
