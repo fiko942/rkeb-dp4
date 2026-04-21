@@ -8,3 +8,4 @@ dist
 *.tsbuildinfo
 .DS_Store
 .env.local
+profile-userdata

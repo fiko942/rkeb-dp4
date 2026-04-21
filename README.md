@@ -87,6 +87,15 @@ Variabel penting:
 - `PLAYWRIGHT_BROWSER_CHANNEL`
 - `PLAYWRIGHT_EXECUTABLE_PATH`
 - `PLAYWRIGHT_LAUNCH_TIMEOUT_MS`
+- `LOCAL_BROWSER_PROFILE_BASE_DIR`
+
+Secara default, profile Playwright lokal akan disimpan di:
+
+```bash
+./profile-userdata
+```
+
+Folder ini dipakai sebagai direktori runtime browser lokal dan tidak ikut dikomit ke repository.
 
 ### 4. Jalankan mode development
 

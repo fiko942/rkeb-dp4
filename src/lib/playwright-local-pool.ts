@@ -1,5 +1,4 @@
-import { mkdir, mkdtemp, rm } from "fs/promises";
-import os from "os";
+import { mkdir, rm } from "fs/promises";
 import path from "path";
 
 import type { BrowserContext } from "playwright";
@@ -42,9 +41,9 @@ class LocalBrowserWorker {
 
   private async createContext() {
     await mkdir(this.options.profileBaseDir, { recursive: true });
-    const profileDir = await mkdtemp(
-      path.join(this.options.profileBaseDir, `${this.id}-`)
-    );
+    const profileDir = path.join(this.options.profileBaseDir, this.id);
+    await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
+    await mkdir(profileDir, { recursive: true });
     this.profileDir = profileDir;
 
     const { chromium } = await import("playwright");
@@ -201,6 +200,9 @@ let localPlaywrightPool: LocalPlaywrightPool | null = null;
 
 function buildPoolOptions(): LocalPlaywrightPoolOptions {
   const runtimeEnv = getRuntimeEnv();
+  const configuredProfileBaseDir = runtimeEnv.localBrowserProfileBaseDir
+    ? path.resolve(process.cwd(), runtimeEnv.localBrowserProfileBaseDir)
+    : path.join(process.cwd(), "profile-userdata");
 
   return {
     maxWorkers: Math.max(1, runtimeEnv.localBrowserMaxWorkers),
@@ -209,9 +211,7 @@ function buildPoolOptions(): LocalPlaywrightPoolOptions {
     channel: runtimeEnv.playwrightBrowserChannel,
     executablePath: runtimeEnv.playwrightExecutablePath,
     launchTimeoutMs: Math.max(3_000, runtimeEnv.playwrightLaunchTimeoutMs),
-    profileBaseDir:
-      runtimeEnv.localBrowserProfileBaseDir ||
-      path.join(os.tmpdir(), "almatrace-browser-workers")
+    profileBaseDir: configuredProfileBaseDir
   };
 }
 

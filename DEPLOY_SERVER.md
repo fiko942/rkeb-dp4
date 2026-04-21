@@ -44,6 +44,12 @@ Lalu isi minimal:
 - `ALMATRACE_AUTH_SECRET`
 - `ALMATRACE_DATA_MODE`
 
+Secara default, data profile browser lokal akan dibuat di:
+
+```bash
+./profile-userdata
+```
+
 ## 4. Install browser Playwright untuk Linux
 
 Karena enrichment berjalan memakai browser lokal, server Linux perlu Chromium Playwright.
