@@ -1,0 +1,50 @@
+{
+  "name": "almatrace",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('.next',{ recursive: true, force: true })\"",
+    "dev": "next dev",
+    "prebuild": "npm run clean",
+    "build": "next build",
+    "package:server": "npm run build && node scripts/package-server.mjs",
+    "start": "next start -p 59620",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^11.18.2",
+    "lucide-react": "^0.511.0",
+    "next": "^14.2.0",
+    "playwright": "^1.59.1",
+    "playwright-core": "^1.59.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sonner": "^1.7.4",
+    "tailwind-merge": "^2.6.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.2",
+    "@testing-library/jest-dom": "^6.8.0",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.15.3",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.0",
+    "jsdom": "^25.0.1",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^2.1.8"
+  }
+}

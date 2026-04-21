@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 38% 7%;
+    --foreground: 210 40% 96%;
+    --card: 222 32% 10%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 32% 10%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 202 100% 55%;
+    --primary-foreground: 216 33% 8%;
+    --secondary: 215 27% 18%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 220 22% 16%;
+    --muted-foreground: 217 15% 68%;
+    --accent: 188 95% 42%;
+    --accent-foreground: 216 33% 8%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217 20% 18%;
+    --input: 217 20% 18%;
+    --ring: 202 100% 55%;
+    --radius: 1.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at top, rgba(15, 118, 198, 0.22), transparent 35%),
+      radial-gradient(circle at 20% 20%, rgba(12, 180, 147, 0.1), transparent 26%),
+      radial-gradient(circle at 80% 10%, rgba(244, 114, 182, 0.16), transparent 24%),
+      linear-gradient(180deg, #07111d 0%, #050b12 100%);
+    background-attachment: fixed;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+    background-size: 90px 90px;
+    mask-image: radial-gradient(circle at top, black, transparent 75%);
+  }
+
+  ::selection {
+    background: rgba(56, 189, 248, 0.35);
+    color: white;
+  }
+}
+
+@layer utilities {
+  .glass {
+    background: linear-gradient(
+      180deg,
+      rgba(17, 25, 40, 0.72) 0%,
+      rgba(10, 16, 29, 0.52) 100%
+    );
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 28px 70px rgba(2, 8, 20, 0.45);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+}
