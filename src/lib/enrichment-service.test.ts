@@ -6,6 +6,7 @@ import {
   enrichPerson,
   isDirectProfileUrl,
   scoreCandidate,
+  unwrapSearchResultUrl,
   type PageResolver,
   type SearchProvider
 } from "@/lib/enrichment-service";
@@ -124,6 +125,16 @@ describe("enrichment-service", () => {
     ).toBe(false);
     expect(isDirectProfileUrl("https://github.com/alyarahman")).toBe(true);
     expect(isDirectProfileUrl("https://wa.me/628123456789")).toBe(true);
+  });
+
+  it("unwraps DuckDuckGo redirect targets and ignores internal html links", () => {
+    expect(
+      unwrapSearchResultUrl(
+        "https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.linkedin.com%2Fin%2Falyarahman"
+      )
+    ).toBe("https://www.linkedin.com/in/alyarahman");
+    expect(unwrapSearchResultUrl("/html/")).toBeNull();
+    expect(unwrapSearchResultUrl("html/")).toBeNull();
   });
 
   it("resolves browser-only direct profile matches", async () => {

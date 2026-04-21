@@ -219,19 +219,32 @@ function resolveAbsoluteUrl(href: string, baseUrl?: string) {
   }
 }
 
-function unwrapSearchResultUrl(url: string) {
-  const parsed = safeUrl(url);
-  if (!parsed) {
-    return normalizePublicUrl(url);
+export function unwrapSearchResultUrl(url: string) {
+  const trimmed = normalizeWhitespace(url);
+  if (!trimmed || /^mailto:/i.test(trimmed) || /^javascript:/i.test(trimmed)) {
+    return null;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed, PLAYWRIGHT_SEARCH_ENDPOINT);
+  } catch {
+    return normalizePublicUrl(trimmed);
   }
 
   const hostname = parsed.hostname.replace(/^www\./, "").toLowerCase();
-  if (hostname === "duckduckgo.com" && parsed.pathname.startsWith("/l/")) {
-    const redirectTarget = parsed.searchParams.get("uddg");
-    return redirectTarget ? normalizePublicUrl(decodeURIComponent(redirectTarget)) : null;
+  if (hostname === "duckduckgo.com") {
+    if (parsed.pathname.startsWith("/l/")) {
+      const redirectTarget = parsed.searchParams.get("uddg");
+      return redirectTarget ? normalizePublicUrl(decodeURIComponent(redirectTarget)) : null;
+    }
+
+    return null;
   }
 
-  return parsed.toString();
+  return parsed.protocol === "http:" || parsed.protocol === "https:"
+    ? parsed.toString()
+    : null;
 }
 
 function isLikelyCrawlableLink(url: string, baseUrl?: string) {
